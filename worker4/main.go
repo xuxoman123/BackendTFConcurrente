@@ -30,7 +30,7 @@ type Data struct {
 
 func (d Data) String() string {
 	return fmt.Sprintf(
-		"X = %f Y = %f, Distance = %f Label = %s, Extra1 = %f, Extra2 = %f\n",
+		"X = %f Y = %f, Distance = %f, Label = %s, Extra1 = %f, Extra2 = %f\n",
 		d.Punto.X, d.Punto.Y, d.Distancia, d.Punto.Label, d.Anadido, d.Anadido2,
 	)
 }
@@ -55,6 +55,14 @@ type JSON_Input struct {
 	K byte    `json:"k"` // k value
 }
 
+//JSON_Input_Trained es el punto a recibir
+type JSON_Input_Trained struct {
+	X    float64 `json:"x"`    // x coordonate
+	Y    float64 `json:"y"`    // y coordonate
+	K    byte    `json:"k"`    // k value
+	Data []Data  `json:"data"` // data array
+}
+
 type JSON_Output struct {
 	Path  []Labels `json:"path"`
 	Class string   `json:"class"`
@@ -71,12 +79,23 @@ func LoadData() (data []Data, err error) {
 	reader.Comma = ','
 	records, err := reader.ReadAll()
 
+	fmt.Println("\n[*] Loading records of Github")
+	fmt.Println()
 	filas := len(records)
 	columnas := len(records[0])
 	if columnas < 3 {
 		return nil, fmt.Errorf("Cannot not load this data")
 	}
-
+	for i := 0; i < filas; i++ {
+		for j := 0; j < columnas; j++ {
+			fmt.Printf("%s\t  ", records[i][j])
+		}
+		if i == 0 {
+			fmt.Println()
+		}
+		fmt.Println()
+	}
+	fmt.Println()
 	var value float64
 	data = make([]Data, filas-1, filas-1)
 	for i := 1; i < filas; i++ {
@@ -162,6 +181,11 @@ func Knn(data []Data, k byte, X *Punto) (err error) {
 	sort.Sort(blk)
 	var save []Labels
 
+	fmt.Println()
+	fmt.Println("[*] Loading Euclidian table")
+	fmt.Println()
+	fmt.Println(data)
+
 	if int(k) > n {
 		return nil
 	}
@@ -169,9 +193,9 @@ func Knn(data []Data, k byte, X *Punto) (err error) {
 		save = IncrementoLabels(data[i].Punto.Label, save)
 	}
 
-	fmt.Printf("[*] Using k as %d\n", k)
+	fmt.Printf("\n[*] Using k as %d\n", k)
 	fmt.Println()
-	fmt.Printf("[*] %+v\n", save)
+	fmt.Printf("[*] Vecinos: %+v\n", save)
 	fmt.Println()
 
 	var deletable Labels
@@ -215,8 +239,31 @@ func worker(w http.ResponseWriter, r *http.Request) {
 	var k = json_input.K
 
 	err = Knn(data, k, &X)
-
 	ValidError(err)
+
+	fmt.Printf("[*] Result for X is ")
+	fmt.Println(X.Label)
+
+	json.NewEncoder(w).Encode(retorno)
+	var aux JSON_Output
+	retorno = aux
+}
+
+func worker_trained(w http.ResponseWriter, r *http.Request) {
+	w.Header().Set("Counter-Type", "application/json")
+
+	var json_input JSON_Input_Trained
+	_ = json.NewDecoder(r.Body).Decode(&json_input)
+
+	var X Punto
+	X.X = json_input.X
+	X.Y = json_input.Y
+	var k = json_input.K
+	var data = json_input.Data
+
+	err := Knn(data, k, &X)
+	ValidError(err)
+
 	fmt.Printf("[*] Result for X is ")
 	fmt.Println(X.Label)
 
@@ -238,6 +285,7 @@ func main() {
 	//Route Handlers / Endpoints
 	r.HandleFunc("/api/knn/nodo_reportarse", report).Methods("GET")
 	r.HandleFunc("/api/knn/nodo_llamar", worker).Methods("POST")
+	r.HandleFunc("/api/knn/nodo_llamar_entrenado", worker_trained).Methods("POST")
 
 	//log.Fatal(http.ListenAndServe(":5004", r))
 	log.Fatal(

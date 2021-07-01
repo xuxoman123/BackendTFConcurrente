@@ -39,6 +39,13 @@ type Worker_Request struct {
 	K byte    `json:"k"`
 }
 
+type Worker_Request_Trained struct {
+	X    float64 `json:"x"` // x coordonate
+	Y    float64 `json:"y"` // y coordonate
+	K    byte    `json:"k"`
+	Data []Data  `json:"data"`
+}
+
 type Worker_Response struct {
 	Path  []Labels `json:"path"`
 	Class string   `json:"class"`
@@ -62,6 +69,12 @@ func (p Punto) String() string {
 	return fmt.Sprintf("[*] X = %f, Y = %f Label = %s\n", p.X, p.Y, p.Label)
 }
 
+type Conteo struct {
+	Clase        string
+	repeticiones int
+	K_mayor      int
+}
+
 type Data struct {
 	Punto     Punto   `json:"punto"`     // point that has coordonates x, y and a label
 	Distancia float64 `json:"distancia"` // the distance from X To point
@@ -71,7 +84,7 @@ type Data struct {
 
 func (d Data) String() string {
 	return fmt.Sprintf(
-		"X = %f Y = %f, Distance = %f Label = %s, Extra1 = %f, Extra2 = %f\n",
+		"X = %f Y = %f, Distance = %f, Label = %s, Extra1 = %f, Extra2 = %f\n",
 		d.Punto.X, d.Punto.Y, d.Distancia, d.Punto.Label, d.Anadido, d.Anadido2,
 	)
 }
@@ -100,7 +113,7 @@ func LoadData() (data []Data, err error) {
 	reader.Comma = ','
 	records, err := reader.ReadAll()
 
-	fmt.Println("[*] Loading records")
+	fmt.Println("\n[*] Loading records of Github")
 	fmt.Println()
 	filas := len(records)
 	columnas := len(records[0])
@@ -195,42 +208,138 @@ func IncrementoLabels(label string, labels []Labels) []Labels {
 	})
 }
 
-func API_KNN(w http.ResponseWriter, r *http.Request) {
-	w.Header().Set("Counter-Type", "application/json")
+func train_AI(X *Punto) {
+	fmt.Println("\n==================================")
+	fmt.Println("==================================")
+	fmt.Println("TRAINING AI")
 
-	//data, err := LoadData(resp.Body)
-	data, err := LoadData()
-	ValidError(err)
+	var conteos []Conteo
 
-	// read from JSON
-	var json_input JSON_Input
-	_ = json.NewDecoder(r.Body).Decode(&json_input)
-	var X Punto
-	X.X = json_input.X
-	X.Y = json_input.Y
-	var k = json_input.K
+	for i := range retorno.Classes {
+		var conteo Conteo
 
-	n := len(k)
+		splits := strings.Split(retorno.Classes[i], " | Class: ")
+		conteo.Clase = splits[1]
+		splits = strings.Split(splits[0], " = ")
+		K_mayor, err := strconv.Atoi(splits[1])
+		ValidError(err)
+		conteo.K_mayor = K_mayor
+		conteo.repeticiones = 1
 
-	err = Knn(data, &X)
-	ValidError(err)
+		exist := false
 
-	var wg sync.WaitGroup
-	wg.Add(len(k))
-
-	for i := 0; i < n; i++ {
-		if i == 0 {
-			fmt.Println(data)
-			retorno.Data = data
+		for j := range conteos {
+			if conteos[j].Clase == conteo.Clase {
+				conteos[j].repeticiones = conteos[j].repeticiones + 1
+				if conteos[j].K_mayor < conteo.K_mayor {
+					conteos[j].K_mayor = conteo.K_mayor
+				}
+				exist = true
+				break
+			}
 		}
-		go call_worker(i, k[i], &X, &wg)
+		if exist == false {
+			conteos = append(conteos, conteo)
+		}
 	}
 
-	wg.Wait()
+	fmt.Println("\nConteos: ", conteos)
 
-	json.NewEncoder(w).Encode(retorno)
-	var aux JSON_Output
-	retorno = aux
+	var clase_final Conteo
+	for i := range conteos {
+		if i == 0 {
+			clase_final.Clase = conteos[0].Clase
+			clase_final.repeticiones = conteos[0].repeticiones
+			clase_final.K_mayor = conteos[0].K_mayor
+		} else if clase_final.repeticiones > conteos[i].repeticiones {
+			continue
+		} else if clase_final.repeticiones < conteos[i].repeticiones {
+			clase_final.Clase = conteos[i].Clase
+			clase_final.repeticiones = conteos[i].repeticiones
+			clase_final.K_mayor = conteos[i].K_mayor
+		} else if clase_final.K_mayor < conteos[i].K_mayor {
+			clase_final.Clase = conteos[i].Clase
+			clase_final.repeticiones = conteos[i].repeticiones
+			clase_final.K_mayor = conteos[i].K_mayor
+		}
+	}
+
+	fmt.Println("\nClase Final: ", clase_final)
+
+	data_trained_save(X, clase_final.Clase)
+}
+
+func data_trained_save(X *Punto, clase string) {
+	file, err := os.OpenFile("data_trained.csv", os.O_APPEND|os.O_WRONLY|os.O_CREATE, 0600)
+	ValidError(err)
+
+	defer file.Close()
+
+	//writer := csv.NewWriter(file)
+
+	var data = "\n" + strconv.FormatFloat(X.X, 'f', 5, 64) + "," + strconv.FormatFloat(X.Y, 'f', 5, 64) + "," + clase + ",1" + ",1"
+
+	//err = writer.WriteAll(data)
+	_, err = file.WriteString(data)
+	ValidError(err)
+}
+
+func data_trained_read() (data []Data, err error) {
+	file, err := os.Open("data_trained.csv")
+	ValidError(err)
+
+	reader := csv.NewReader(file)
+	reader.Comma = ','
+	records, err := reader.ReadAll()
+	ValidError(err)
+
+	fmt.Println("\n[*] Loading Trained data")
+	fmt.Println()
+	filas := len(records)
+	columnas := len(records[0])
+	if columnas < 3 {
+		return nil, fmt.Errorf("Cannot not load this data")
+	}
+	for i := 0; i < filas; i++ {
+		for j := 0; j < columnas; j++ {
+			fmt.Printf("%s\t  ", records[i][j])
+		}
+		if i == 0 {
+			fmt.Println()
+		}
+		fmt.Println()
+	}
+	fmt.Println()
+
+	var value float64
+	data = make([]Data, filas-1, filas-1)
+	for i := 1; i < filas; i++ {
+		value, err = strconv.ParseFloat(records[i][0], 64)
+		if err != nil {
+			return nil, fmt.Errorf("cannot parse X value: %v", err)
+		}
+		data[i-1].Punto.X = value
+		value, err = strconv.ParseFloat(records[i][1], 64)
+		if err != nil {
+			return nil, fmt.Errorf("cannot parse Y value: %v", err)
+		}
+		data[i-1].Punto.Y = value
+		data[i-1].Punto.Label = records[i][2]
+
+		value, err = strconv.ParseFloat(records[i][3], 64)
+		if err != nil {
+			return nil, fmt.Errorf("cannot parse E1 value: %v", err)
+		}
+		data[i-1].Anadido = value
+
+		value, err = strconv.ParseFloat(records[i][4], 64)
+		if err != nil {
+			return nil, fmt.Errorf("cannot parse E2 value: %v", err)
+		}
+		data[i-1].Anadido2 = value
+
+	}
+	return data, nil
 }
 
 func call_worker(i int, k byte, X *Punto, wg *sync.WaitGroup) {
@@ -266,11 +375,129 @@ func call_worker(i int, k byte, X *Punto, wg *sync.WaitGroup) {
 	retorno.Paths = append(retorno.Paths, body.Path)
 	retorno.Classes = append(retorno.Classes, body.Class)
 
-	fmt.Println()
-	fmt.Println("Worker: ", id_worker, " | K: ", k, "PATH | ", body.Path, "CLASS | ", body.Class)
+	fmt.Println("\nWorker: ", id_worker, " | K: ", k, "PATH | ", body.Path, "CLASS | ", body.Class)
 
 	defer wg.Done()
+}
 
+func call_worker_trained(data *[]Data, i int, k byte, X *Punto, wg *sync.WaitGroup) {
+
+	id_worker := (i % 5) + 1
+	var url_call string
+
+	switch id_worker {
+	case 1:
+		url_call = "http://localhost:5001/api/knn/nodo_llamar_entrenado"
+	case 2:
+		url_call = "http://localhost:5002/api/knn/nodo_llamar_entrenado"
+	case 3:
+		url_call = "http://localhost:5003/api/knn/nodo_llamar_entrenado"
+	case 4:
+		url_call = "http://localhost:5004/api/knn/nodo_llamar_entrenado"
+	case 5:
+		url_call = "http://localhost:5005/api/knn/nodo_llamar_entrenado"
+	}
+
+	req := Worker_Request_Trained{X.X, X.Y, k, *data}
+	jsonReq, err := json.Marshal(req)
+	ValidError(err)
+
+	resp, err := http.Post(url_call, "application/json; charset=utf-8", bytes.NewBuffer(jsonReq))
+	ValidError(err)
+
+	defer resp.Body.Close()
+	bodyBytes, _ := ioutil.ReadAll(resp.Body)
+	var body Worker_Response
+	json.Unmarshal(bodyBytes, &body)
+
+	retorno.Paths = append(retorno.Paths, body.Path)
+	retorno.Classes = append(retorno.Classes, body.Class)
+
+	fmt.Println("\nWorker: ", id_worker, " | K: ", k, "PATH | ", body.Path, "CLASS | ", body.Class)
+
+	defer wg.Done()
+}
+
+func API_KNN(w http.ResponseWriter, r *http.Request) {
+	w.Header().Set("Counter-Type", "application/json")
+
+	data, err := LoadData()
+	ValidError(err)
+
+	// read from JSON
+	var json_input JSON_Input
+	_ = json.NewDecoder(r.Body).Decode(&json_input)
+	var X Punto
+	X.X = json_input.X
+	X.Y = json_input.Y
+	var k = json_input.K
+
+	n := len(k)
+
+	err = Knn(data, &X)
+	ValidError(err)
+
+	var wg sync.WaitGroup
+	wg.Add(len(k))
+
+	for i := 0; i < n; i++ {
+		if i == 0 {
+			fmt.Println()
+			fmt.Println("[*] Loading Euclidian table")
+			fmt.Println()
+			fmt.Println(data)
+			retorno.Data = data
+		}
+		go call_worker(i, k[i], &X, &wg)
+	}
+
+	wg.Wait()
+
+	train_AI(&X)
+
+	json.NewEncoder(w).Encode(retorno)
+	var aux JSON_Output
+	retorno = aux
+}
+
+func API_KNN_entrenado(w http.ResponseWriter, r *http.Request) {
+	w.Header().Set("Counter-Type", "application/json")
+
+	data, err := data_trained_read()
+	ValidError(err)
+
+	// read from JSON
+	var json_input JSON_Input
+	_ = json.NewDecoder(r.Body).Decode(&json_input)
+	var X Punto
+	X.X = json_input.X
+	X.Y = json_input.Y
+	var k = json_input.K
+
+	n := len(k)
+
+	err = Knn(data, &X)
+	ValidError(err)
+
+	var wg sync.WaitGroup
+	wg.Add(len(k))
+
+	for i := 0; i < n; i++ {
+		if i == 0 {
+			fmt.Println()
+			fmt.Println("[*] Loading Euclidian table")
+			fmt.Println()
+			fmt.Println(data)
+			retorno.Data = data
+		}
+		go call_worker_trained(&data, i, k[i], &X, &wg)
+	}
+
+	wg.Wait()
+
+	json.NewEncoder(w).Encode(retorno)
+	var aux JSON_Output
+	retorno = aux
 }
 
 func main() {
@@ -279,6 +506,7 @@ func main() {
 
 	//Route Handlers / Endpoints
 	r.HandleFunc("/api/knn", API_KNN).Methods("POST")
+	r.HandleFunc("/api/knn_entrenado", API_KNN_entrenado).Methods("POST")
 
 	//log.Fatal(http.ListenAndServe(":5000", r))
 	log.Fatal(
