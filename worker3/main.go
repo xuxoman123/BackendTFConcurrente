@@ -72,7 +72,7 @@ var retorno JSON_Output
 
 func LoadData() (data []Data, err error) {
 
-	resp, err_http := http.Get("https://raw.githubusercontent.com/GoDie910/Concurrente_TA2_CSV/main/dataaa.csv")
+	resp, err_http := http.Get("https://raw.githubusercontent.com/xuxoman123/BackendTFConcurrente/main/dataaa.csv")
 	ValidError(err_http)
 	defer resp.Body.Close()
 	reader := csv.NewReader(resp.Body)
