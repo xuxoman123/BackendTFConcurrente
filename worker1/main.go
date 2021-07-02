@@ -24,13 +24,13 @@ type Labels struct {
 type Data struct {
 	Punto     Punto   `json:"punto"`     // point that has coordonates x, y and a label
 	Distancia float64 `json:"distancia"` // the distance from X To point
-	Anadido   float64 `json:"anadido"`   //añadido
-	Anadido2  float64 `json:"anadido2"`
+	Anadido   string  `json:"anadido"`   //añadido
+	Anadido2  string  `json:"anadido2"`
 }
 
 func (d Data) String() string {
 	return fmt.Sprintf(
-		"X = %f Y = %f, Distance = %f, Label = %s, Extra1 = %f, Extra2 = %f\n",
+		"X = %f Y = %f, Distance = %f, Label = %s, Tipo = %s, Fecha = %s\n",
 		d.Punto.X, d.Punto.Y, d.Distancia, d.Punto.Label, d.Anadido, d.Anadido2,
 	)
 }
@@ -110,18 +110,8 @@ func LoadData() (data []Data, err error) {
 		}
 		data[i-1].Punto.Y = value
 		data[i-1].Punto.Label = records[i][2]
-
-		value, err = strconv.ParseFloat(records[i][3], 64)
-		if err != nil {
-			return nil, fmt.Errorf("cannot parse E1 value: %v", err)
-		}
-		data[i-1].Anadido = value
-
-		value, err = strconv.ParseFloat(records[i][4], 64)
-		if err != nil {
-			return nil, fmt.Errorf("cannot parse E2 value: %v", err)
-		}
-		data[i-1].Anadido2 = value
+		data[i-1].Anadido = records[i][3]
+		data[i-1].Anadido2 = records[i][4]
 
 	}
 	return data, nil
